@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/plantingtrees/cli-messenger/notification"
 	"github.com/plantingtrees/cli-messenger/ui"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -59,10 +60,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEnter:
 			val := m.textInput.Value()
-			return m, tea.Sequence(
-				tea.Println("OYEZ Protocol Initiated: "+val),
-				tea.Quit,
-			)
+
+			go notification.NotifyUser("OYEH", "New Message: "+val)
+
+			m.textInput.SetValue("")
+
+			return m, nil
 		}
 	}
 
@@ -76,7 +79,7 @@ func (m model) View() string {
 	logo := ui.RenderLogo(m.frame)
 
 	inputBox := ui.RenderInput(m.textInput)
-	helpText := ui.RenderHelp("ESC TO ABORT • ENTER TO TRANSMIT")
+	helpText := ui.RenderHelp("ESC to abort • ENTER to continue")
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,
