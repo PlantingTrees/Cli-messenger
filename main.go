@@ -1,114 +1,139 @@
 package main
 
 import (
-	"fmt"
-	"os"
+	"log"
 	"time"
-
-	"github.com/plantingtrees/cli-messenger/notification"
-	"github.com/plantingtrees/cli-messenger/ui"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/donderom/bubblon"
+	"github.com/plantingtrees/cli-messenger/ui/components"
+	"github.com/plantingtrees/cli-messenger/ui/screens"
 )
 
-// Define a message for the tick
-type TickMsg time.Time
+// to animate, logo
+// uses a custom message that gets sent to update()
+type tickMsg time.Time
 
-// --- Model ---
-type model struct {
-	textInput textinput.Model
-	width     int
-	height    int
-	frame     int
+// tea run a go routine on the anon function, pauses fucntion for 10ms, and send the time to Update
+func tick() tea.Cmd {
+	return tea.Tick(30*time.Millisecond, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
 }
 
-func initialModel() model {
+type model struct {
+	frame         int
+	logo          string
+	userName      textinput.Model
+	help          string
+	showExitModal screens.Modal
+
+	// for view rendering
+	width  int
+	height int
+}
+
+func NewModel() model {
+	ti := components.NewInput()
 	return model{
-		textInput: ui.NewInput(),
-		frame:     5,
+		frame:         0,
+		logo:          "",
+		userName:      ti,
+		help:          "",
+		showExitModal: screens.NewModal(),
 	}
 }
 
-// --- Init ---
 func (m model) Init() tea.Cmd {
-	// Return a batch: Blink the cursor AND start the animation timer
 	return tea.Batch(
+		tea.SetWindowTitle("OYEH"),
 		textinput.Blink,
 		tick(),
 	)
 }
 
-// --- Update ---
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
 	switch msg := msg.(type) {
+	// msg for logo animation
+	case tickMsg:
+		m.frame++
+		return m, tick()
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 
-	// Capture the Tick
-	case TickMsg:
-		m.frame++        // Increment the frame
-		return m, tick() // Trigger the next tick immediately
-
 	case tea.KeyMsg:
 		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
-			return m, tea.Quit
 		case tea.KeyEnter:
-			val := m.textInput.Value()
-
-			go notification.NotifyUser("OYEH", "New Message: "+val)
-
-			m.textInput.SetValue("")
-
-			return m, nil
+			if m.userName.Value() != "" {
+				return m, bubblon.Replace(screens.NewIntroModel(m.userName.Value()))
+			}
 		}
 	}
 
-	m.textInput, cmd = m.textInput.Update(msg)
-	return m, cmd
+	// exit modal handles its own logic
+	var cmd tea.Cmd
+	m.showExitModal, cmd = m.showExitModal.Update(msg)
+
+	// prevents shadow typing in the textbox
+	var inputCmd tea.Cmd
+	if !m.showExitModal.Value() {
+		m.userName, inputCmd = m.userName.Update(msg)
+	}
+	return m, tea.Batch(cmd, inputCmd)
 }
 
-// --- View ---
 func (m model) View() string {
-	// PASS THE FRAME TO THE LOGO
-	logo := ui.RenderLogo(m.frame)
+	logoView := components.RenderLogo(m.frame)
+	textBoxView := components.RenderInput(m.userName)
+	helpView := components.RenderHelp("Esc to quit • Enter to continue")
 
-	inputBox := ui.RenderInput(m.textInput)
-	helpText := ui.RenderHelp("ESC to abort • ENTER to continue")
-
-	content := lipgloss.JoinVertical(
+	layoutElements := lipgloss.JoinVertical(
 		lipgloss.Center,
-		logo,
-		inputBox,
-		helpText,
+		logoView,
+		textBoxView,
+		helpView,
 	)
 
-	return lipgloss.Place(
+	// Base background layout
+	view := lipgloss.Place(
 		m.width,
 		m.height,
 		lipgloss.Center,
 		lipgloss.Center,
-		content,
+		layoutElements,
 	)
-}
 
-// --- Helper for the Tick ---
-func tick() tea.Cmd {
-	// Update every 17 milliseconds
-	return tea.Tick(time.Millisecond*17, func(t time.Time) tea.Msg {
-		return TickMsg(t)
-	})
+	// IF MODAL IS OPEN: Overlay it
+	if m.showExitModal.Value() {
+		modalView := m.showExitModal.View()
+
+		// This places the modal precisely in the center of the terminal
+		return lipgloss.Place(m.width, m.height,
+			lipgloss.Center, lipgloss.Center,
+			modalView,
+			// This makes the background layout stay behind it
+			lipgloss.WithWhitespaceChars(""),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+		)
+	}
+
+	return view
 }
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error: %v", err)
-		os.Exit(1)
+	controller, err := bubblon.New(NewModel())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	p := tea.NewProgram(controller, tea.WithAltScreen())
+	m, _ := p.Run()
+
+	if m, ok := m.(bubblon.Controller); ok && m.Err != nil {
+		log.Fatal(m.Err)
 	}
 }
