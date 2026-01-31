@@ -1,4 +1,4 @@
-package ui
+package components
 
 import (
 	"github.com/charmbracelet/bubbles/textinput"
@@ -18,6 +18,7 @@ func NewInput() textinput.Model {
 	ti := textinput.New()
 	ti.Placeholder = "Enter Username"
 	ti.Focus()
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#813452"))
 	ti.CharLimit = 20
 	ti.Width = 30
 	ti.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0055"))
